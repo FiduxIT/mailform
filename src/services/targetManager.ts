@@ -1,74 +1,88 @@
-import {Target} from "../@types/target";
+import { Target } from "../@types/target";
 import fs from "fs";
 import path from "path";
-import {RateLimiter} from "./rateLimiter";
-import {EmailService} from "./email";
+import { RateLimiter } from "./rateLimiter";
+import { EmailService } from "./email";
 import validate from "validate.js";
-import {targetModel} from "../models/target";
+import { targetModel } from "../models/target";
 
 export class TargetManager {
+  public static targets: Map<string, Target> = new Map<string, Target>();
 
-    public static targets: Map<string, Target> = new Map<string, Target>();
+  private static path: string = process.env.TARGETS_DIR ?? "targets";
 
-    private static path: string = process.env.TARGETS_DIR ?? "targets";
+  /**
+   * Load all targets from the targets directory
+   */
+  public static load(): void {
+    let targets: string[];
 
-    /**
-     * Load all targets from the targets directory
-     */
-    public static load(): void {
+    console.log("Loading targets...");
 
-        let targets: string[];
-
-        console.log("Loading targets...");
-
-        try {
-            targets = fs.readdirSync(this.path);
-        } catch (e) {
-            throw new Error("Cannot load targets" + e);
-        }
-
-        targets = targets.filter((file) => file.endsWith(".json"));
-
-        for(let targetFileName of targets) {
-
-            let target: any = JSON.parse(fs.readFileSync(path.join(this.path, targetFileName)).toString())
-
-            let targetName = path.basename(targetFileName, path.extname(targetFileName));
-
-            this.validateTarget(targetName, target);
-
-            console.log("* Loaded target: " + targetName);
-
-            this.targets.set(targetName, <Target>target);
-
-
-            RateLimiter.registerTarget(targetName, target.rateLimit);
-            EmailService.registerTarget(targetName, target.smtp);
-
-        }
-
+    try {
+      targets = fs.readdirSync(this.path);
+    } catch (e) {
+      throw new Error("Cannot load targets" + e);
     }
 
-    /**
-     * Validate a target file object and cancel the program if there are errors.
-     * @param targetName (file-)name of the target
-     * @param target The target object
-     * @private
-     */
-    private static validateTarget(targetName: string, target: Target): void {
+    targets = targets.filter((file) => file.endsWith(".json"));
 
-        let validationErrors = validate.validate(target, targetModel, {format: "detailed"})
+    for (let targetFileName of targets) {
+      let target: any = JSON.parse(
+        fs.readFileSync(path.join(this.path, targetFileName)).toString()
+      );
 
-        if(validationErrors === undefined ) return;
+      let targetName = path.basename(
+        targetFileName,
+        path.extname(targetFileName)
+      );
 
-        console.error("Error: Target " + targetName + " is invalid!");
+      this.validateTarget(targetName, target);
 
-        for(let err of validationErrors) {
-            console.error(err.error);
-        }
+      console.log("* Loaded target: " + targetName);
 
-        process.exit(-1);
+      this.targets.set(targetName, <Target>target);
 
+      RateLimiter.registerTarget(targetName, target.rateLimit);
+      EmailService.registerTarget(targetName, target.smtp);
+    }
+  }
+
+  /**
+   * Validate a target file object and cancel the program if there are errors.
+   * @param targetName (file-)name of the target
+   * @param target The target object
+   * @private
+   */
+  private static validateTarget(targetName: string, target: Target): void {
+    // Register custom type for origin: string or string[] (idempotent)
+    const vAny: any = validate as any;
+    if (!vAny.validators?.type?.types?.stringOrStringArray) {
+      vAny.validators = vAny.validators || {};
+      vAny.validators.type = vAny.validators.type || { types: {} };
+      vAny.validators.type.types = vAny.validators.type.types || {};
+      vAny.validators.type.types.stringOrStringArray = function (value: any) {
+        if (value === undefined) return true;
+        return (
+          typeof value === "string" ||
+          (Array.isArray(value) &&
+            value.every((v: any) => typeof v === "string"))
+        );
+      };
     }
 
+    let validationErrors = validate.validate(target, targetModel, {
+      format: "detailed",
+    });
+
+    if (validationErrors === undefined) return;
+
+    console.error("Error: Target " + targetName + " is invalid!");
+
+    for (let err of validationErrors) {
+      console.error(err.error);
+    }
+
+    process.exit(-1);
+  }
 }
