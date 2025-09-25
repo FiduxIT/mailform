@@ -25,12 +25,20 @@ router.use(
 
     let target: Target = TargetManager.targets.get(req.params.target);
 
-    // CORS
-    res.setHeader(
-      "Access-Control-Allow-Origin",
-      target.origin ? target.origin : "*"
-    );
-    res.setHeader("Access-Control-Allow-Method", "POST");
+    // CORS with multiple origins support
+    const requestOrigin = req.header("origin") || "";
+    const allowedOrigins = Array.isArray(target.origin)
+      ? target.origin
+      : target.origin
+      ? [target.origin]
+      : [];
+
+    if (allowedOrigins.length === 0) {
+      res.setHeader("Access-Control-Allow-Origin", "*");
+    } else if (allowedOrigins.includes(requestOrigin)) {
+      res.setHeader("Access-Control-Allow-Origin", requestOrigin);
+    }
+    res.setHeader("Access-Control-Allow-Methods", "POST");
     res.setHeader("Access-Control-Allow-Headers", "*");
 
     if (req.method === "OPTIONS") {
@@ -38,7 +46,7 @@ router.use(
     }
 
     // Check origin
-    if (target.origin && target.origin !== req.header("origin")) {
+    if (allowedOrigins.length > 0 && !allowedOrigins.includes(requestOrigin)) {
       if (target.redirect?.error)
         return res.redirect(getRedirectUrl(req, target.redirect.error));
       return res.status(403).end();

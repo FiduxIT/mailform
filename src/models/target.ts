@@ -8,7 +8,13 @@ export const targetModel = {
     },
   },
   origin: {
-    type: "string",
+    type: function (value: any) {
+      if (value === undefined) return true;
+      if (typeof value === "string") return true;
+      if (Array.isArray(value) && value.every((v) => typeof v === "string"))
+        return true;
+      return false;
+    },
     presence: false,
   },
   recipients: {
